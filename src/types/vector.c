@@ -1,4 +1,4 @@
-#include "vector.h"
+#include "types/vector.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +8,7 @@ void create_vector(Vector *vector, size_t capacity, size_t element_size)
    vector->data = malloc(element_size * capacity);
    vector->capacity = capacity;
    vector->element_size = element_size;
-   vector->size = 0;
+   vector->size = 0u;
 }
 
 void free_vector(Vector *vector)
@@ -25,9 +25,9 @@ void free_mallocated_vector(Vector *vector)
 {
    if (vector->data)
    {
-      for (size_t i = 0; i < vector->size; ++i)
+      for (size_t i = 0u; i < vector->size; ++i)
       {
-         void* ptr = (char*)vector->data + i * vector->element_size;
+         void *ptr = (char*)vector->data + i * vector->element_size;
          if (ptr && *(void**)ptr)
             free(*(void**)ptr);
       }
@@ -49,8 +49,8 @@ void vector_push_back(Vector *vector, void *element)
 {
    if (vector->size >= vector->capacity)
    {
-      vector->capacity += (vector->capacity ? vector->capacity : 1);
-      void* new_data = realloc(vector->data, vector->capacity * vector->element_size);
+      vector->capacity += (vector->capacity ? vector->capacity : 1u);
+      void *new_data = realloc(vector->data, vector->capacity * vector->element_size);
 
       if (!new_data)
       {
@@ -70,5 +70,5 @@ bool vector_empty(Vector *vector)
 
 void vector_clear(Vector *vector)
 {
-   vector->size = 0;
+   vector->size = 0u;
 }
