@@ -3,6 +3,6 @@
 
 #define bool char
 #define true 1
-#define false 1
+#define false 0
 
 #endif // BOOLEAN_H
