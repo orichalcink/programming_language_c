@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 Set keyword_set;
 
@@ -14,15 +15,36 @@ void create_lexer(Lexer *lexer, char *source, Catcher *catcher)
    create_vector(&lexer->tokens, 25u, sizeof(Token));
 }
 
-void free_lexer(Lexer *lexer)
+void free_tokens_vector(Vector* vector)
 {
-   for (size_t i = 0u; i < lexer->tokens.size; ++i)
+   Set freed;
+   create_set(&freed, vector->capacity);
+
+   char addr_str[32u];
+
+   for (size_t i = 0u; i < vector->size; ++i)
    {
-      Token token = *(Token*)vector_at(&lexer->tokens, i); 
-      if (token.type == IDENTIFIER || token.type == KEYWORD || token.type == STRING || token.type == CHARACTER || token.type == REAL || token.type == INTEGER)
-         free(token.lexeme);
+      Token* token = (Token*)vector_at(vector, i);
+
+      if (token->lexeme != NULL && is_token_mallocated(token->type))
+      {
+         snprintf(addr_str, sizeof(addr_str), "%p", (void*)token->lexeme);
+
+         if (!set_contains(&freed, addr_str))
+         {
+            free(token->lexeme);
+            token->lexeme = NULL;
+            set_insert(&freed, addr_str);
+         }
+      }
    }
-   free_vector(&lexer->tokens);
+   free_set(&freed);
+   free_vector(vector);
+}
+
+void free_lexer(Lexer* lexer)
+{
+   free_tokens_vector(&lexer->tokens);
 }
 
 void lexer_tokenize(Lexer *lexer)
@@ -33,11 +55,20 @@ void lexer_tokenize(Lexer *lexer)
    {
       char ch = lexer->source[i];
 
-      if (isspace(ch))
+      if (ch == '\n')
+         lexer_push_back(lexer, NEWLINE, "\n");
+      else if (isspace(ch))
          continue;
-
-      if (ch == '=')
+      else if (ch == ';')
+         lexer_push_back(lexer, SEMICOLON, ";");
+      else if (ch == '=')
          lexer_push_back(lexer, EQUALS, "=");
+      else if (ch == '(')
+         lexer_push_back(lexer, L_PAREN, "(");
+      else if (ch == ')')
+         lexer_push_back(lexer, R_PAREN, ")");
+      else if (ch == ',')
+         lexer_push_back(lexer, COMMA, ",");
       else if (ch == '/' && lexer_peek(lexer, i, 1) == '/')
          for (; i < source_size && lexer->source[i] != '\n'; ++i)
             ;
@@ -46,6 +77,9 @@ void lexer_tokenize(Lexer *lexer)
          for (; i < source_size && (lexer->source[i] != '*' || lexer_peek(lexer, i, 1) != '/'); ++i)
             ;
          ++i;
+
+         if (i >= source_size)
+            catcher_insert(lexer->catcher, err_unterminated_comment);
       }
       else if (ch == '"')
       {
@@ -96,6 +130,13 @@ void lexer_tokenize(Lexer *lexer)
 
             string[size] = ch;
             ++size;
+         }
+
+         if (i >= source_size)
+         {
+            free(string);
+            catcher_insert(lexer->catcher, err_unterminated_string);
+            return;
          }
 
          string[size] = '\0';
@@ -260,4 +301,9 @@ char lexer_peek(Lexer *lexer, size_t index, size_t by)
    if (index + by >= strlen(lexer->source))
       return 0;
    return lexer->source[index + by];
+}
+
+bool is_token_mallocated(TType type)
+{
+   return type == IDENTIFIER || type == KEYWORD || type == STRING || type == CHARACTER || type == REAL || type == INTEGER;
 }

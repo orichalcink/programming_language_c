@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-void create_list(List *list, size_t capacity, size_t element_size)
+void create_list(List* list, size_t capacity, size_t element_size)
 {
    list->keys = malloc(capacity * sizeof(char*));
    list->values = malloc(capacity * element_size);
@@ -12,7 +12,7 @@ void create_list(List *list, size_t capacity, size_t element_size)
    list->capacity = capacity;
 }
 
-void free_list(List *list)
+void free_list(List* list)
 {
    if (list->keys)
    {
@@ -30,7 +30,7 @@ void free_list(List *list)
    list->value_size = list->size = list->capacity = 0u;
 }
 
-void* list_at(List *list, const char *key)
+void* list_at(List* list, const char* key)
 {
    for (size_t i = 0u; i < list->size; ++i)
       if (!strcmp(list->keys[i], key))
@@ -38,12 +38,12 @@ void* list_at(List *list, const char *key)
    return NULL;
 }
 
-void list_insert(List *list, const char *key, void *value)
+void list_insert(List* list, const char* key, void* value)
 {
    if (list->size >= list->capacity)
    {
       list->capacity += (list->capacity ? list->capacity : 1u);
-      void *new_values = realloc(list->values, list->capacity * list->value_size);
+      void* new_values = realloc(list->values, list->capacity * list->value_size);
 
       if (!new_values)
       {
@@ -52,7 +52,7 @@ void list_insert(List *list, const char *key, void *value)
       }
       list->values = new_values;
 
-      char **new_keys = realloc(list->keys, list->capacity * sizeof(char*));
+      char** new_keys = realloc(list->keys, list->capacity * sizeof(char*));
 
       if (!new_keys)
       {
@@ -67,7 +67,7 @@ void list_insert(List *list, const char *key, void *value)
    ++list->size;
 }
 
-bool list_contains(List *list, const char *key)
+bool list_contains(List* list, const char* key)
 {
    for (size_t i = 0u; i < list->size; ++i)
       if (!strcmp(list->keys[i], key))
@@ -75,12 +75,12 @@ bool list_contains(List *list, const char *key)
    return false;
 }
 
-bool list_empty(List *list)
+bool list_empty(List* list)
 {
    return list->size == 0u;
 }
 
-void list_clear(List *list)
+void list_clear(List* list)
 {
    for (size_t i = 0u; i < list->size; ++i)
       free(list->keys[i]);

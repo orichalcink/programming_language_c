@@ -2,6 +2,7 @@
 #include "lexer/keywords.h"
 #include "lexer/lexer.h"
 #include "io/io.h"
+#include "preprocessor/preprocessor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,7 @@ int main()
    while (true)
    {
       printf("> ");
-      char *input = read_input();
+      char* input = read_input();
 
       if (!input || !strcmp(input, ""))
       {
@@ -29,10 +30,30 @@ int main()
          continue;
       }
 
-      if (!strcmp(input, "quit") || !strcmp(input, "exit"))
+      char* file_name = NULL;
+
+      if (is_file(input))
+      {
+         file_name = strdup(input);
+         char* file = read_file(&catcher, input);
+
+         if (catcher_display(&catcher))
+         {
+            free(input);
+            free(file_name);
+            continue;
+         }
+         input = strdup(file);
+         free(file);
+      }
+
+      if (!strcmp(input, "quit"))
       {
          printf("Quitting...\n");
          free(input);
+         if (file_name)
+            free(file_name);
+
          free_catcher(&catcher);
          free_keyword_set();
          return 0;
@@ -46,16 +67,35 @@ int main()
       {
          free_lexer(&lexer);
          free(input);
+         if (file_name)
+            free(file_name);
          continue;
       }
 
-      for (size_t i = 0; i < lexer.tokens.size; ++i)
+      Preprocessor preprocessor;
+      create_preprocessor(&preprocessor, &lexer.tokens, &catcher, file_name);
+      preprocessor_process(&preprocessor);
+
+      if (catcher_display(&catcher))
       {
-         Token *token = (Token*)vector_at(&lexer.tokens, i);
-         printf("%d: '%s'\n", token->type, token->lexeme);
+         free_lexer(&lexer);
+         free_preprocessor(&preprocessor);
+         free(input);
+         if (file_name)
+            free(file_name);
+         continue;
+      }
+
+      for (size_t i = 0; i < preprocessor.tokens->size; ++i)
+      {
+         Token *token = (Token*)vector_at(preprocessor.tokens, i);
+         printf("PR: %d: '%s'\n", token->type, token->lexeme);
       }
 
       free_lexer(&lexer);
+      free_preprocessor(&preprocessor);
       free(input);
+      if (file_name)
+         free(file_name);
    }
 }
