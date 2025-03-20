@@ -657,6 +657,7 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor)
       catcher_insert(preprocessor->catcher, err_mcond_did_not_end_with_endif);
       return;
    }
+
    current->type = SKIP;
    free(current->lexeme);
 }
