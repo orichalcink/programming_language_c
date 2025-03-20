@@ -65,7 +65,7 @@ int main()
 
       if (catcher_display(&catcher))
       {
-         free_lexer(&lexer);
+         free_tokens_vector(&lexer.tokens);
          free(input);
          if (file_name)
             free(file_name);
@@ -78,7 +78,6 @@ int main()
 
       if (catcher_display(&catcher))
       {
-         free_lexer(&lexer);
          free_preprocessor(&preprocessor);
          free(input);
          if (file_name)
@@ -92,7 +91,6 @@ int main()
          printf("PR: %d: '%s'\n", token->type, token->lexeme);
       }
 
-      free_lexer(&lexer);
       free_preprocessor(&preprocessor);
       free(input);
       if (file_name)

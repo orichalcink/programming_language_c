@@ -37,7 +37,7 @@ void free_preprocessor(Preprocessor* preprocessor)
    if (preprocessor->tokens)
    {
       bool free_ptr = (preprocessor->tokens->data != NULL);
-      free_vector(preprocessor->tokens);
+      free_tokens_vector(preprocessor->tokens);
 
       if (free_ptr)
          free(preprocessor->tokens);
@@ -60,7 +60,7 @@ void preprocessor_process(Preprocessor* preprocessor)
       else if (token->type == MACRO && (!strcmp(token->lexeme, "undef") || !strcmp(token->lexeme, "undefine")))
          preprocessor_handle_undefine(preprocessor);
       else if (is_macro_conditional(token))
-         preprocessor_handle_conditionals(preprocessor, false);
+         preprocessor_handle_conditionals(preprocessor);
 
       if (!catcher_empty(preprocessor->catcher))
          return;
@@ -591,7 +591,7 @@ void preprocessor_handle_file(Preprocessor* preprocessor, char* file, bool inclu
    preprocessor->mallocated = true;
 }
 
-void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif)
+void preprocessor_handle_conditionals(Preprocessor* preprocessor)
 {
    Token* token = vector_at(preprocessor->tokens, preprocessor->index);
    bool if_defined = (!strcmp(token->lexeme, "ifdef") || !strcmp(token->lexeme, "ifndef") || !strcmp(token->lexeme, "elifdef") || !strcmp(token->lexeme, "elifndef"));
@@ -610,7 +610,10 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif)
       if (is_macro_conditional_else_if(current))
       {
          if (current_type == CT_FALSE)
-            preprocessor_handle_conditionals(preprocessor, true);
+         {
+            preprocessor_handle_conditionals(preprocessor);
+            return;
+         }
          else
             current_type = CT_EVALUATED;
       }
@@ -636,7 +639,7 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif)
          else if (token->type == MACRO && (!strcmp(token->lexeme, "undef") || !strcmp(token->lexeme, "undefine")))
             preprocessor_handle_undefine(preprocessor);
          else if (is_macro_conditional(current))
-            preprocessor_handle_conditionals(preprocessor, false);
+            preprocessor_handle_conditionals(preprocessor);
          ++preprocessor->index;
       }
       else
@@ -647,12 +650,6 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif)
          ++preprocessor->index;
       }
       current = vector_at(preprocessor->tokens, preprocessor->index);
-   }
-
-   if (elif)
-   {
-      --preprocessor->index;
-      return;
    }
 
    if (current->type == END_OF_FILE)
@@ -722,6 +719,7 @@ bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if
    }
    next->type = SKIP;
    free(next->lexeme);
+   ++preprocessor->index;
 
    Stack reversed;
    create_stack(&reversed, 3u, sizeof(Token*));

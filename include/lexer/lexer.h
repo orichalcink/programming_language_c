@@ -13,7 +13,6 @@ typedef struct
 
 void create_lexer(Lexer *lexer, char *source, Catcher *catcher);
 void free_tokens_vector(Vector* vector);
-void free_lexer(Lexer *lexer);
 
 void lexer_tokenize(Lexer *lexer);
 void lexer_push_back(Lexer *lexer, TType type, char *lexeme);

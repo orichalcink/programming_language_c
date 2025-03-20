@@ -42,11 +42,6 @@ void free_tokens_vector(Vector* vector)
    free_vector(vector);
 }
 
-void free_lexer(Lexer* lexer)
-{
-   free_tokens_vector(&lexer->tokens);
-}
-
 void lexer_tokenize(Lexer *lexer)
 {
    size_t source_size = strlen(lexer->source);

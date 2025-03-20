@@ -34,7 +34,7 @@ void preprocessor_handle_undefine(Preprocessor* preprocessor);
 void preprocessor_handle_import(Preprocessor* preprocessor);
 void preprocessor_handle_file(Preprocessor* preprocessor, char* file, bool include_guard);
 
-void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif);
+void preprocessor_handle_conditionals(Preprocessor* preprocessor);
 bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if_defined, bool negative);
 
 bool is_macro_conditional(Token* token);
