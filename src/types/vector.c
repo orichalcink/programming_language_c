@@ -21,23 +21,6 @@ void free_vector(Vector* vector)
    vector->capacity = vector->element_size = vector->size = 0u;
 }
 
-void free_mallocated_vector(Vector* vector)
-{
-   if (vector->data)
-   {
-      for (size_t i = 0u; i < vector->size; ++i)
-      {
-         void *ptr = (char*)vector->data + i * vector->element_size;
-         if (ptr && *(void**)ptr)
-            free(*(void**)ptr);
-      }
-
-      free(vector->data);
-      vector->data = NULL;
-   }
-   vector->capacity = vector->element_size = vector->size = 0u;
-}
-
 void* vector_at(Vector* vector, size_t index)
 {
    if (index >= vector->size)

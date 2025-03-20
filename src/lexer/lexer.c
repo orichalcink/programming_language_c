@@ -60,9 +60,60 @@ void lexer_tokenize(Lexer *lexer)
       else if (isspace(ch))
          continue;
       else if (ch == ';')
-         lexer_push_back(lexer, SEMICOLON, ";");
+      {
+         if (i + 1 < source_size && lexer->source[i + 1] == ';')
+         {
+            lexer_push_back(lexer, NEWLINE, "\n");
+            ++i;
+         }
+         else lexer_push_back(lexer, SEMICOLON, ";");
+      }
       else if (ch == '=')
-         lexer_push_back(lexer, EQUALS, "=");
+      {
+         if (i + 1 < source_size && lexer->source[i + 1] == '=')
+         {
+            lexer_push_back(lexer, EQUALS_EQUALS, "==");
+            ++i;
+         }
+         else lexer_push_back(lexer, EQUALS, "=");
+      }
+      else if (ch == '<')
+      {
+         if (i + 1 < source_size && lexer->source[i + 1] == '=')
+         {
+            lexer_push_back(lexer, SMALLER_EQUAL, "<=");
+            ++i;
+         }
+         else lexer_push_back(lexer, SMALLER, "<");
+      }
+      else if (ch == '>')
+      {
+         if (i + 1 < source_size && lexer->source[i + 1] == '=')
+         {
+            lexer_push_back(lexer, BIGGER_EQUAL, ">=");
+            ++i;
+         }
+         else lexer_push_back(lexer, BIGGER, ">");
+      }
+      else if (ch == '!')
+      {
+         if (i + 1 < source_size && lexer->source[i + 1] == '=')
+         {
+            lexer_push_back(lexer, BANG_EQUALS, "!=");
+            ++i;
+         }
+         else lexer_push_back(lexer, BANG, "!");
+      }
+      else if (ch == '&' && i + 1 < source_size && lexer->source[i + 1] == '&')
+      {
+         lexer_push_back(lexer, AND, "&&");
+         ++i;
+      }
+      else if (ch == '|' && i + 1 < source_size && lexer->source[i + 1] == '|')
+      {
+         lexer_push_back(lexer, OR, "||");
+         ++i;
+      }
       else if (ch == '(')
          lexer_push_back(lexer, L_PAREN, "(");
       else if (ch == ')')
@@ -179,11 +230,14 @@ void lexer_tokenize(Lexer *lexer)
 
          lexer_push_back(lexer, CHARACTER, ptr);
       }
-      else if (isalpha(ch))
+      else if (isalpha(ch) || ch == '#')
       {
          size_t capacity = 5u;
          size_t size = 0u;
          char *identifier = malloc(capacity);
+
+         bool macro = (ch == '#');
+         if (macro) ++i;
 
          for (; i < source_size; ++i)
          {
@@ -212,9 +266,10 @@ void lexer_tokenize(Lexer *lexer)
             identifier[size] = ch;
             ++size;
          }
-
          identifier[size] = '\0';
-         lexer_push_back(lexer, (set_contains(&keyword_set, identifier) ? KEYWORD : IDENTIFIER), identifier);
+
+         bool key = set_contains(&keyword_set, identifier);
+         lexer_push_back(lexer, (key ? (macro ? MACRO : KEYWORD) : IDENTIFIER), identifier);
       }
       else if (isdigit(ch) || ch == '.')
       {
@@ -305,5 +360,5 @@ char lexer_peek(Lexer *lexer, size_t index, size_t by)
 
 bool is_token_mallocated(TType type)
 {
-   return type == IDENTIFIER || type == KEYWORD || type == STRING || type == CHARACTER || type == REAL || type == INTEGER;
+   return type == MACRO || type == IDENTIFIER || type == KEYWORD || type == STRING || type == CHARACTER || type == REAL || type == INTEGER;
 }

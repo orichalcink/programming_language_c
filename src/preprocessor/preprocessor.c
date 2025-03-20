@@ -2,7 +2,7 @@
 #include "errors/errors.h"
 #include "io/io.h"
 #include "lexer/lexer.h"
-#include "lexer/tokens.h"
+#include "types/stack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,13 +51,17 @@ void preprocessor_process(Preprocessor* preprocessor)
    {
       Token* token = (Token*)vector_at(preprocessor->tokens, preprocessor->index);
 
-      if (token->type == KEYWORD && !strcmp(token->lexeme, "import"))
+      if (token->type == MACRO && (!strcmp(token->lexeme, "import") || !strcmp(token->lexeme, "include")))
          preprocessor_handle_import(preprocessor);
-      else if (token->type == KEYWORD && (!strcmp(token->lexeme, "define") || !strcmp(token->lexeme, "define_line")))
+      else if (token->type == MACRO && (!strcmp(token->lexeme, "define") || !strcmp(token->lexeme, "def") || !strcmp(token->lexeme, "define_line") || !strcmp(token->lexeme, "defl")))
          preprocessor_handle_define(preprocessor);
       else if (token->type == IDENTIFIER && list_contains(&preprocessor->replaceable, token->lexeme))
          preprocessor_handle_using_define(preprocessor);
-      
+      else if (token->type == MACRO && (!strcmp(token->lexeme, "undef") || !strcmp(token->lexeme, "undefine")))
+         preprocessor_handle_undefine(preprocessor);
+      else if (is_macro_conditional(token))
+         preprocessor_handle_conditionals(preprocessor, false);
+
       if (!catcher_empty(preprocessor->catcher))
          return;
    }
@@ -82,7 +86,7 @@ void preprocessor_process(Preprocessor* preprocessor)
 void preprocessor_handle_define(Preprocessor* preprocessor)
 {
    Token* token = (Token*)vector_at(preprocessor->tokens, preprocessor->index);
-   bool define_line = (!strcmp(token->lexeme, "define_line"));
+   bool define_line = (!strcmp(token->lexeme, "define_line") || !strcmp(token->lexeme, "defl"));
 
    token->type = SKIP;
    free(token->lexeme);
@@ -139,9 +143,6 @@ void preprocessor_handle_define(Preprocessor* preprocessor)
          ++preprocessor->index;
          ++arg_count;
 
-         if (preprocessor->index >= preprocessor->total_size)
-            break;
-
          value_token = (Token*)vector_at(preprocessor->tokens, preprocessor->index);
          if (value_token->type != COMMA && value_token->type != R_PAREN)
          {
@@ -151,9 +152,6 @@ void preprocessor_handle_define(Preprocessor* preprocessor)
          }
          value_token->type = SKIP;
          ++preprocessor->index;
-
-         if (preprocessor->index >= preprocessor->total_size)
-            break;
       }
       vector_push_back(values, &separator);
 
@@ -189,6 +187,20 @@ void preprocessor_handle_define(Preprocessor* preprocessor)
    }
    else
    {
+      if (((Token*)vector_at(preprocessor->tokens, preprocessor->index))->type == SEMICOLON)
+      {
+         ((Token*)vector_at(preprocessor->tokens, preprocessor->index))->type = SKIP;
+         Vector* values = malloc(sizeof(Vector));
+         create_vector(values, 0u, sizeof(Token));
+
+         Token fake = {.type = SKIP, .lexeme = ""};
+         vector_push_back(values, &fake);
+
+         list_insert(&preprocessor->replaceable, name_token->lexeme, &values);
+         free(name_token->lexeme);
+         return;
+      }
+
       if (((Token*)vector_at(preprocessor->tokens, preprocessor->index))->type != EQUALS)
       {
          catcher_insert(preprocessor->catcher, err_expected_equals_using);
@@ -262,6 +274,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
          vector_push_back(&copied_definition, &copy);
       }
 
+      token = vector_at(preprocessor->tokens, preprocessor->index);
       token->type = SKIP;
       ++preprocessor->index;
       Vector params;
@@ -414,9 +427,47 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
    }
 }
 
+void preprocessor_handle_undefine(Preprocessor* preprocessor)
+{
+   Token* token = vector_at(preprocessor->tokens, preprocessor->index);
+   token->type = SKIP;
+   free(token->lexeme);
+   ++preprocessor->index;
+
+   token = vector_at(preprocessor->tokens, preprocessor->index);
+
+   if (token->type != IDENTIFIER)
+   {
+      catcher_insert(preprocessor->catcher, err_invalid_undefine_macro);
+      return;
+   }
+
+   if (list_contains(&preprocessor->replaceable, token->lexeme))
+   {
+      Vector* ptr = *(Vector**)list_at(&preprocessor->replaceable, token->lexeme);
+      free_tokens_vector(ptr);
+      free(ptr);
+      list_remove(&preprocessor->replaceable, token->lexeme);
+   }
+   token->type = SKIP;
+   free(token->lexeme);
+   ++preprocessor->index;
+
+   token = vector_at(preprocessor->tokens, preprocessor->index);
+
+   if (token->type != SEMICOLON)
+   {
+      catcher_insert(preprocessor->catcher, err_statement_semicolon);
+      return;
+   }
+   token->type = SKIP;
+}
+
 void preprocessor_handle_import(Preprocessor* preprocessor)
 {
    Token* token = (Token*)vector_at(preprocessor->tokens, preprocessor->index);
+   bool include_guard = (!strcmp("import", token->lexeme));
+
    token->type = SKIP;
    free(token->lexeme);
    ++preprocessor->index;
@@ -477,14 +528,13 @@ void preprocessor_handle_import(Preprocessor* preprocessor)
    next->type = SKIP;
 
    for (size_t i = 0u; i < files.size; ++i)
-      preprocessor_handle_file(preprocessor, *(char**)vector_at(&files, i));
+      preprocessor_handle_file(preprocessor, *(char**)vector_at(&files, i), include_guard);
 
    free_vector(&files);
 }
 
-void preprocessor_handle_file(Preprocessor* preprocessor, char* file)
+void preprocessor_handle_file(Preprocessor* preprocessor, char* file, bool include_guard)
 {
-   printf("File: '%s'\n", file);
    if (!is_file(file))
    {
       catcher_insert(preprocessor->catcher, err_import_invalid_file);
@@ -492,12 +542,15 @@ void preprocessor_handle_file(Preprocessor* preprocessor, char* file)
       return;
    }
 
-   if (set_contains(&preprocessor->included_files, file))
+   if (include_guard)
    {
-      free(file);
-      return;
+      if (set_contains(&preprocessor->included_files, file))
+      {
+         free(file);
+         return;
+      }
+      set_insert(&preprocessor->included_files, file);
    }
-   set_insert(&preprocessor->included_files, file);
 
    char* code = read_file(preprocessor->catcher, file);
 
@@ -536,4 +589,335 @@ void preprocessor_handle_file(Preprocessor* preprocessor, char* file)
    free_vector(&lexer.tokens);
    free(code);
    preprocessor->mallocated = true;
+}
+
+void preprocessor_handle_conditionals(Preprocessor* preprocessor, bool elif)
+{
+   Token* token = vector_at(preprocessor->tokens, preprocessor->index);
+   bool if_defined = (!strcmp(token->lexeme, "ifdef") || !strcmp(token->lexeme, "ifndef") || !strcmp(token->lexeme, "elifdef") || !strcmp(token->lexeme, "elifndef"));
+   bool negative = (!strcmp(token->lexeme, "ifn") || !strcmp(token->lexeme, "ifndef") || !strcmp(token->lexeme, "elifn") || !strcmp(token->lexeme, "elifndef"));
+   
+   token->type = SKIP;
+   free(token->lexeme);
+   ++preprocessor->index;
+
+   bool result = preprocessor_handle_boolean_expressions(preprocessor, if_defined, negative);
+   CType current_type = (result ? CT_TRUE : CT_FALSE);
+   Token* current = vector_at(preprocessor->tokens, preprocessor->index);
+
+   while (current->type != END_OF_FILE && (current->type != MACRO || strcmp(current->lexeme, "endif")))
+   {
+      if (is_macro_conditional_else_if(current))
+      {
+         if (current_type == CT_FALSE)
+            preprocessor_handle_conditionals(preprocessor, true);
+         else
+            current_type = CT_EVALUATED;
+      }
+
+      if (!strcmp(current->lexeme, "else"))
+      {
+         current_type = (current_type == CT_FALSE ? CT_TRUE : CT_EVALUATED);
+         if (current_type == CT_TRUE)
+         {
+            free(current->lexeme);
+            current->type = SKIP;
+         }
+      }
+
+      if (current_type == CT_TRUE)
+      {
+         if (current->type == MACRO && (!strcmp(current->lexeme, "import") || !strcmp(current->lexeme, "include")))
+            preprocessor_handle_import(preprocessor);
+         else if (current->type == MACRO && (!strcmp(current->lexeme, "define") || !strcmp(current->lexeme, "def") || !strcmp(current->lexeme, "define_line") || !strcmp(current->lexeme, "defl")))
+            preprocessor_handle_define(preprocessor);
+         else if (current->type == IDENTIFIER && list_contains(&preprocessor->replaceable, current->lexeme))
+            preprocessor_handle_using_define(preprocessor);
+         else if (token->type == MACRO && (!strcmp(token->lexeme, "undef") || !strcmp(token->lexeme, "undefine")))
+            preprocessor_handle_undefine(preprocessor);
+         else if (is_macro_conditional(current))
+            preprocessor_handle_conditionals(preprocessor, false);
+         ++preprocessor->index;
+      }
+      else
+      {
+         if (is_token_mallocated(current->type))
+            free(current->lexeme);
+         current->type = SKIP;
+         ++preprocessor->index;
+      }
+      current = vector_at(preprocessor->tokens, preprocessor->index);
+   }
+
+   if (elif)
+   {
+      --preprocessor->index;
+      return;
+   }
+
+   if (current->type == END_OF_FILE)
+   {
+      catcher_insert(preprocessor->catcher, err_mcond_did_not_end_with_endif);
+      return;
+   }
+   current->type = SKIP;
+   free(current->lexeme);
+}
+
+bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if_defined, bool negative)
+{
+   Token* next = vector_at(preprocessor->tokens, preprocessor->index);
+   Stack operator_stack;
+   Stack output_stack;
+
+   create_stack(&operator_stack, 3u, sizeof(Token*));
+   create_stack(&output_stack, 3u, sizeof(Token*));
+
+   while ((next->type != MACRO || strcmp(next->lexeme, "then")) && next->type != END_OF_FILE)
+   {
+      if (get_precedence(next->type))
+      {
+         while (!stack_empty(&operator_stack))
+         {
+            Token* top = *(Token**)stack_top(&operator_stack);
+
+            if (!has_higher_precedence(next->type, top->type))
+            {
+               stack_pop(&operator_stack);
+               stack_push(&output_stack, &top);
+            }
+            else break;
+         }
+         stack_push(&operator_stack, &next);
+      }
+      else if (next->type == L_PAREN)
+         stack_push(&operator_stack, &next);
+      else if (next->type == R_PAREN)
+      {
+         while (operator_stack.size != 0)
+         {
+            Token* element = *(Token**)stack_top(&operator_stack);
+            
+            if (element->type == L_PAREN)
+            {
+               stack_pop(&operator_stack);
+               break;
+            }
+            stack_push(&output_stack, &element);
+            stack_pop(&operator_stack);
+         }
+      }
+      else stack_push(&output_stack, &next);
+
+      ++preprocessor->index;
+      next = vector_at(preprocessor->tokens, preprocessor->index);
+   }
+
+   if (next->type == END_OF_FILE)
+   {
+      catcher_insert(preprocessor->catcher, err_invalid_macro_conditional);
+      free_stack(&output_stack);
+      free_stack(&operator_stack);
+      return false;
+   }
+   next->type = SKIP;
+   free(next->lexeme);
+
+   Stack reversed;
+   create_stack(&reversed, 3u, sizeof(Token*));
+
+   while (!stack_empty(&operator_stack))
+   {
+      Token* element = *(Token**)stack_top(&operator_stack);
+      if (element->type == L_PAREN)
+      {
+         catcher_insert(preprocessor->catcher, err_mismatched_parentheses);
+         free_stack(&output_stack);
+         free_stack(&operator_stack);
+         free_stack(&reversed);
+         return false;
+      }
+      stack_pop(&operator_stack);
+      stack_push(&output_stack, &element);
+   }
+
+   while (!stack_empty(&output_stack))
+   {
+      Token* element = *(Token**)stack_top(&output_stack);
+      stack_pop(&output_stack);
+      stack_push(&reversed, &element);
+   }
+
+   Stack eval_stack;
+   create_stack(&eval_stack, 3u, sizeof(long double));
+
+   while (!stack_empty(&reversed))
+   {
+      Token* element = *(Token**)stack_top(&reversed);
+      stack_pop(&reversed);
+
+      if (element->type == IDENTIFIER)
+      {
+         if (if_defined)
+         {
+            long double defined = (long double)list_contains(&preprocessor->replaceable, element->lexeme);
+            stack_push(&eval_stack, &defined);
+         }
+         else
+         {
+            if (!list_contains(&preprocessor->replaceable, element->lexeme))
+            {
+               catcher_insert(preprocessor->catcher, err_invalid_macro_in_mcond);
+               free_stack(&eval_stack);
+               free_stack(&operator_stack);
+               free_stack(&output_stack);
+               free_stack(&reversed);
+               return false;
+            }
+
+            Vector* macro_body = *(Vector**)list_at(&preprocessor->replaceable, element->lexeme);
+
+            if (macro_body->size != 1)
+            {
+               catcher_insert(preprocessor->catcher, err_invalid_macro_in_mcond);
+               free_stack(&eval_stack);
+               free_stack(&operator_stack);
+               free_stack(&output_stack);
+               free_stack(&reversed);
+               return false;
+            }
+
+            Token* token = vector_at(macro_body, 0u);
+            stack_push(&reversed, &token);
+         }
+      }
+      else if (element->type == REAL || element->type == INTEGER)
+      {
+         char* endptr;
+         long double a = strtold(element->lexeme, &endptr);
+
+         if (*endptr != '\0')
+         {
+            catcher_insert(preprocessor->catcher, err_cannot_convert_to_ld);
+            free_stack(&eval_stack);
+            free_stack(&operator_stack);
+            free_stack(&output_stack);
+            free_stack(&reversed);
+            return false;
+         }
+         stack_push(&eval_stack, &a);
+      }
+      else if (element->type == BANG)
+      {
+         if (eval_stack.size > 1u)
+         {
+            catcher_insert(preprocessor->catcher, err_invalid_bool_expr_mcond);
+            free_stack(&eval_stack);
+            free_stack(&operator_stack);
+            free_stack(&output_stack);
+            free_stack(&reversed);
+            return false;
+         }
+
+         long double a = *(long double*)stack_top(&eval_stack);
+         long double result = (a == 0.0 ? 1.0 : 0.0);
+         stack_pop(&eval_stack);
+         stack_push(&eval_stack, &result);
+      }
+      else
+      {
+         if (eval_stack.size > 2u)
+         {
+            catcher_insert(preprocessor->catcher, err_invalid_bool_expr_mcond);
+            free_stack(&eval_stack);
+            free_stack(&operator_stack);
+            free_stack(&output_stack);
+            free_stack(&reversed);
+            return false;
+         }
+
+         long double b = *(long double*)stack_top(&eval_stack);
+         stack_pop(&eval_stack);
+         long double a = *(long double*)stack_top(&eval_stack);
+         stack_pop(&eval_stack);
+
+         long double result;
+         switch (element->type)
+         {
+         case AND:
+            result = (long double)(a && b);
+            break;
+         case OR:
+            result = (long double)(a || b);
+            break;
+         case EQUALS_EQUALS:
+            result = (long double)(a == b);
+            break;
+         case BANG_EQUALS:
+            result = (long double)(a != b);
+            break;
+         case SMALLER:
+            result = (long double)(a < b);
+            break;
+         case SMALLER_EQUAL:
+            result = (long double)(a <= b);
+            break;
+         case BIGGER:
+            result = (long double)(a > b);
+            break;
+         case BIGGER_EQUAL:
+            result = (long double)(a >= b);
+            break;
+         default:
+            result = false;
+            catcher_insert(preprocessor->catcher, err_unexpected_token_mcond);
+         }
+         stack_push(&eval_stack, &result);
+      }
+
+      if (is_token_mallocated(element->type))
+         free(element->lexeme);
+      element->type = SKIP;
+   }
+
+   bool result = *(long double*)stack_top(&eval_stack);
+   free_stack(&eval_stack);
+   free_stack(&operator_stack);
+   free_stack(&output_stack);
+   free_stack(&reversed);
+   return (negative ? !result : result);
+}
+
+bool is_macro_conditional(Token* token)
+{
+   return token->type == MACRO && (!strcmp(token->lexeme, "if") || !strcmp(token->lexeme, "ifn") || !strcmp(token->lexeme, "ifdef") || !strcmp(token->lexeme, "ifndef"));
+}
+
+bool is_macro_conditional_else_if(Token* token)
+{
+   return token->type == MACRO && (!strcmp(token->lexeme, "elif") || !strcmp(token->lexeme, "elifn") || !strcmp(token->lexeme, "elifdef") || !strcmp(token->lexeme, "elifndef"));
+}
+
+int get_precedence(TType type)
+{
+   switch (type)
+   {
+   case BANG:
+      return 5;
+   case SMALLER: case SMALLER_EQUAL: case BIGGER: case BIGGER_EQUAL:
+      return 4;
+   case EQUALS_EQUALS: case BANG_EQUALS:
+      return 3;
+   case AND:
+      return 2;
+   case OR:
+      return 1;
+   default:
+      return 0;
+   };
+}
+
+bool has_higher_precedence(TType first, TType second)
+{
+   return get_precedence(first) >= get_precedence(second);
 }

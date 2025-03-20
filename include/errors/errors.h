@@ -30,5 +30,14 @@ static char* err_invalid_arg_count = "Invalid argument count in macro call.";
 static char* err_invalid_macro_call = "Invalid macro call, either use no parentheses for no arguments, or parentheses with values as arguments.";
 static char* err_invalid_macro_params = "Invalid macro parameter definition, either use no parentheses for no parameters, or parentheses with identifiers as parameters.";
 static char* err_invalid_macro_body = "Invalid macro body, expected atleast one token.";
+static char* err_invalid_backslash = "Invalid backslash, either next line does not exist or last token isn't a newline token.";
+static char* err_mismatched_parentheses = "Mismatched parentheses in macro conditional.";
+static char* err_invalid_macro_conditional = "Unfinished boolean expression in macro conditional, expected '#then' after boolean expression.";
+static char* err_unexpected_token_mcond = "Unexpected token/operator in macro conditional boolean expression.";
+static char* err_cannot_convert_to_ld = "Could not convert from string to long double.";
+static char* err_invalid_macro_in_mcond = "Invalid macro in macro conditional boolean expression, either does not exist or isn't exactly one token in size.";
+static char* err_mcond_did_not_end_with_endif = "Macro conditional statement did not end with the '#endif' keyword.";
+static char* err_invalid_bool_expr_mcond = "Invalid boolean expression in macro condition, invalid amount of operands.";
+static char* err_invalid_undefine_macro = "Invalid 'undefine' macro, expected an identifier of a macro after the keyword.";
 
 #endif // ERRORS_H
