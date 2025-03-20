@@ -67,24 +67,6 @@ void list_insert(List* list, const char* key, void* value)
    ++list->size;
 }
 
-void list_remove(List* list, const char* key)
-{
-   for (size_t i = 0u; i < list->size; ++i)
-   {
-      if (strcmp(list->keys[i], key))
-         continue;
-
-      free(list->keys[i]);
-
-      for (size_t index = i; index < list->size - 1; ++index)
-      {
-         list->keys[index] = list->keys[index + 1];
-         memcpy((char*)list->values + list->size * list->value_size, ((char*)list->values + (i + 1) * list->value_size), list->value_size);
-      }
-   }
-   --list->size;
-}
-
 bool list_contains(List* list, const char* key)
 {
    for (size_t i = 0u; i < list->size; ++i)

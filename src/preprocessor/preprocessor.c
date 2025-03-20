@@ -27,7 +27,9 @@ void free_preprocessor(Preprocessor* preprocessor)
    for (size_t i = 0u; i < preprocessor->replaceable.size; ++i)
    {
       Vector* ptr = *(Vector**)((char*)preprocessor->replaceable.values + i * preprocessor->replaceable.value_size);
-      free_tokens_vector(ptr);
+
+      if (preprocessor->replaceable.keys[i][0] != '\0')
+         free_tokens_vector(ptr);
       free(ptr);
    }
 
@@ -36,10 +38,8 @@ void free_preprocessor(Preprocessor* preprocessor)
 
    if (preprocessor->tokens)
    {
-      bool free_ptr = (preprocessor->tokens->data != NULL);
       free_tokens_vector(preprocessor->tokens);
-
-      if (free_ptr)
+      if (preprocessor->mallocated)
          free(preprocessor->tokens);
    }
    preprocessor->total_size = preprocessor->index = 0u;
@@ -61,6 +61,8 @@ void preprocessor_process(Preprocessor* preprocessor)
          preprocessor_handle_undefine(preprocessor);
       else if (is_macro_conditional(token))
          preprocessor_handle_conditionals(preprocessor);
+      else if (is_macro_conditional_else_if(token) || (token->type == MACRO && (!strcmp(token->lexeme, "endif") || !strcmp(token->lexeme, "else"))))
+         catcher_insert(preprocessor->catcher, err_invalid_mcond_start);
 
       if (!catcher_empty(preprocessor->catcher))
          return;
@@ -80,6 +82,7 @@ void preprocessor_process(Preprocessor* preprocessor)
    free_vector(preprocessor->tokens);
    if (preprocessor->mallocated)
       free(preprocessor->tokens);
+   preprocessor->mallocated = true;
    preprocessor->tokens = new_vector;
 }
 
@@ -249,6 +252,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
    Token* token = (Token*)vector_at(preprocessor->tokens, preprocessor->index);
    token->type = SKIP;
    Vector* macro_definition = *(Vector**)list_at(&preprocessor->replaceable, token->lexeme);
+   printf("FIRST FREEING: '%s' %p\n", token->lexeme, token->lexeme);
    free(token->lexeme);
 
    ++preprocessor->index;
@@ -319,6 +323,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
          ++param_count;
          size_t real_index = i - 1u;
          list_insert(&translations, token->lexeme, &real_index);
+         printf("FREEING1: '%s' %p\n", token->lexeme, token->lexeme);
          free(token->lexeme);
          token->type = SKIP;
       }
@@ -340,6 +345,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
          {
             Token* replacement = (Token*)vector_at(&params, *(size_t*)list_at(&translations, token->lexeme));
             token->type = replacement->type;
+            printf("FREEING2: '%s' %p\n", token->lexeme, token->lexeme);
             free(token->lexeme);
             token->lexeme = strdup(replacement->lexeme);
          }
@@ -393,6 +399,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
                separator = true;
             
             ++preprocessor->index;
+            printf("FREEING3: '%s' %p\n", token->lexeme, token->lexeme);
             if (is_token_mallocated(token->type))
                free(token->lexeme);
             token->type = SKIP;
@@ -419,6 +426,7 @@ void preprocessor_handle_using_define(Preprocessor* preprocessor)
       preprocessor->total_size = new_tokens->size;
       free_vector(preprocessor->tokens);
 
+      printf("FREEING TOKENS: %p\n", preprocessor->tokens);
       if (preprocessor->mallocated)
          free(preprocessor->tokens);
 
@@ -442,13 +450,16 @@ void preprocessor_handle_undefine(Preprocessor* preprocessor)
       return;
    }
 
-   if (list_contains(&preprocessor->replaceable, token->lexeme))
+   for (size_t i = 0u; i < preprocessor->replaceable.size; ++i)
    {
-      Vector* ptr = *(Vector**)list_at(&preprocessor->replaceable, token->lexeme);
-      free_tokens_vector(ptr);
-      free(ptr);
-      list_remove(&preprocessor->replaceable, token->lexeme);
+      if (!strcmp(preprocessor->replaceable.keys[i], token->lexeme))
+      {
+         preprocessor->replaceable.keys[i][0] = '\0';
+         Vector* ptr = *(Vector**)((char*)preprocessor->replaceable.values + i * preprocessor->replaceable.value_size);
+         free_tokens_vector(ptr);
+      }
    }
+
    token->type = SKIP;
    free(token->lexeme);
    ++preprocessor->index;
@@ -604,23 +615,25 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor)
    bool result = preprocessor_handle_boolean_expressions(preprocessor, if_defined, negative);
    CType current_type = (result ? CT_TRUE : CT_FALSE);
    Token* current = vector_at(preprocessor->tokens, preprocessor->index);
+   size_t depth = 0u;
 
-   while (current->type != END_OF_FILE && (current->type != MACRO || strcmp(current->lexeme, "endif")))
+   while (current->type != END_OF_FILE && (current->type != MACRO || strcmp(current->lexeme, "endif") || depth > 0u))
    {
       if (is_macro_conditional_else_if(current))
       {
-         if (current_type == CT_FALSE)
+         if (current_type == CT_FALSE && depth == 0u)
          {
             preprocessor_handle_conditionals(preprocessor);
             return;
          }
-         else
+         else if (current_type != CT_FALSE)
             current_type = CT_EVALUATED;
       }
 
-      if (!strcmp(current->lexeme, "else"))
+      if (depth == 0u && !strcmp(current->lexeme, "else"))
       {
          current_type = (current_type == CT_FALSE ? CT_TRUE : CT_EVALUATED);
+
          if (current_type == CT_TRUE)
          {
             free(current->lexeme);
@@ -640,10 +653,16 @@ void preprocessor_handle_conditionals(Preprocessor* preprocessor)
             preprocessor_handle_undefine(preprocessor);
          else if (is_macro_conditional(current))
             preprocessor_handle_conditionals(preprocessor);
+
          ++preprocessor->index;
       }
       else
       {
+         if (is_macro_conditional(current))
+            ++depth;
+         else if (depth > 0u && current->type == MACRO && !strcmp(current->lexeme, "endif"))
+            --depth;
+
          if (is_token_mallocated(current->type))
             free(current->lexeme);
          current->type = SKIP;
@@ -750,6 +769,8 @@ bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if
    Stack eval_stack;
    create_stack(&eval_stack, 3u, sizeof(long double));
 
+   bool last_mallocated = false;
+
    while (!stack_empty(&reversed))
    {
       Token* element = *(Token**)stack_top(&reversed);
@@ -785,9 +806,26 @@ bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if
                free_stack(&reversed);
                return false;
             }
+            ++last_mallocated;
 
-            Token* token = vector_at(macro_body, 0u);
-            stack_push(&reversed, &token);
+
+            Token* value = vector_at(macro_body, 0u);
+            Token* copied = malloc(sizeof(Token));
+
+            if (value->type == SKIP)
+            {
+               char* lexeme = malloc(sizeof(char) * 2u);
+               lexeme[0] = '0';
+               lexeme[1] = '\0';
+               copied->lexeme = lexeme;
+               copied->type = INTEGER;
+            }
+            else
+            {
+               copied->lexeme = strdup(value->lexeme);
+               copied->type = value->type;
+            }
+            stack_push(&reversed, &copied);
          }
       }
       else if (element->type == REAL || element->type == INTEGER)
@@ -873,6 +911,20 @@ bool preprocessor_handle_boolean_expressions(Preprocessor* preprocessor, bool if
          }
          stack_push(&eval_stack, &result);
       }
+
+      if (last_mallocated >= 2)
+      {
+         free(element->lexeme);
+         free(element);
+         last_mallocated -= 2;
+
+         if (last_mallocated == 1)
+            ++last_mallocated;
+         continue;
+      }
+
+      if (last_mallocated == 1)
+         ++last_mallocated;
 
       if (is_token_mallocated(element->type))
          free(element->lexeme);

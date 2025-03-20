@@ -28,6 +28,7 @@ void free_tokens_vector(Vector* vector)
 
       if (token->lexeme != NULL && is_token_mallocated(token->type))
       {
+         printf("in free vector index %zu: '%s' %d %p\n", i, token->lexeme, token->type, token->lexeme);
          snprintf(addr_str, sizeof(addr_str), "%p", (void*)token->lexeme);
 
          if (!set_contains(&freed, addr_str))

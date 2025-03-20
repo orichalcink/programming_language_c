@@ -18,7 +18,6 @@ void free_list(List* list);
 
 void* list_at(List* list, const char* key);
 void  list_insert(List* list, const char* key, void* value);
-void  list_remove(List* list, const char* key);
 bool  list_contains(List* list, const char* key);
 bool  list_empty(List* list);
 void  list_clear(List* list);

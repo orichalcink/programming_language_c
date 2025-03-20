@@ -39,5 +39,6 @@ static char* err_invalid_macro_in_mcond = "Invalid macro in macro conditional bo
 static char* err_mcond_did_not_end_with_endif = "Macro conditional statement did not end with the '#endif' keyword.";
 static char* err_invalid_bool_expr_mcond = "Invalid boolean expression in macro condition, invalid amount of operands.";
 static char* err_invalid_undefine_macro = "Invalid 'undefine' macro, expected an identifier of a macro after the keyword.";
+static char* err_invalid_mcond_start = "Expected a macro conditional to start with '#if'/'#ifn'/'#ifdef'/'#ifndef'.";
 
 #endif // ERRORS_H
